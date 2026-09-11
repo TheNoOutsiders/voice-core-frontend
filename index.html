@@ -230,27 +230,44 @@ if (!SpeechRecognition) {
   micBtn.style.opacity = 0.4;
 } else {
   const recognition = new SpeechRecognition();
-  recognition.continuous = false;
+  recognition.continuous = true;   // keep listening through pauses — you decide when you're done
   recognition.interimResults = true;
   recognition.lang = 'en-US';
-  recognition.onstart = () => { isListening = true; micBtn.classList.add('listening'); setStatus('listening…', true); };
+
+  let accumulatedFinal = '';
+
+  recognition.onstart = () => {
+    isListening = true;
+    accumulatedFinal = '';
+    micBtn.classList.add('listening');
+    setStatus('listening…', true);
+  };
   recognition.onresult = (event) => {
-    let interim = '', final = '';
+    let interim = '';
     for (let i = event.resultIndex; i < event.results.length; i++) {
       const t = event.results[i][0].transcript;
-      if (event.results[i].isFinal) final += t; else interim += t;
+      if (event.results[i].isFinal) accumulatedFinal += t + ' ';
+      else interim += t;
     }
-    interimEl.textContent = interim;
-    if (final.trim()) { interimEl.textContent = ''; addTurn('user', final.trim()); askCore(final.trim()); }
+    // show what's been said so far plus what's still being figured out
+    interimEl.textContent = (accumulatedFinal + interim).trim();
   };
   recognition.onerror = (event) => {
     if (event.error === 'not-allowed') showBanner('Microphone access was blocked. Allow mic permission and try again.');
     else if (event.error !== 'no-speech') showBanner('Speech recognition error: ' + event.error);
   };
-  recognition.onend = () => { isListening = false; micBtn.classList.remove('listening'); interimEl.textContent = ''; if (!isThinking) setStatus('idle'); };
+  recognition.onend = () => {
+    isListening = false;
+    micBtn.classList.remove('listening');
+    interimEl.textContent = '';
+    const said = accumulatedFinal.trim();
+    accumulatedFinal = '';
+    if (said) { addTurn('user', said); askCore(said); }
+    else if (!isThinking) setStatus('idle');
+  };
   micBtn.addEventListener('click', () => {
     if (isThinking) return;
-    if (isListening) { recognition.stop(); }
+    if (isListening) { recognition.stop(); } // you clicked again — this is you saying "I'm done talking"
     else { window.speechSynthesis.cancel(); try { recognition.start(); } catch (e) {} }
   });
 }
