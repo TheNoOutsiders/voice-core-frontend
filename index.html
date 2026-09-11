@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Voice Core — Phase 1 (Secure)</title>
+<style>
+  :root {
+    --bg: #16140f; --bg-panel: #1e1b14; --line: #3a3527;
+    --text: #ece6d6; --text-dim: #8c8570; --accent: #c98a3e;
+    --accent-dim: #6b5530; --danger: #a8503b;
+    --mono: 'IBM Plex Mono', 'Courier New', monospace;
+    --serif: 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; background: var(--bg); color: var(--text); font-family: var(--serif); }
+  .wrap { max-width: 640px; margin: 0 auto; height: 100vh; display: flex; flex-direction: column; padding: 28px 20px 20px; }
+  header { display: flex; align-items: baseline; justify-content: space-between; border-bottom: 1px solid var(--line); padding-bottom: 14px; margin-bottom: 18px; }
+  header h1 { font-size: 20px; font-weight: 500; margin: 0; letter-spacing: 0.02em; }
+  header .status { font-family: var(--mono); font-size: 12px; color: var(--text-dim); }
+  header .status.live { color: var(--accent); }
+
+  .gate { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; text-align: center; }
+  .gate h2 { font-size: 17px; font-weight: 500; margin: 0; }
+  .gate p { font-family: var(--mono); font-size: 12px; color: var(--text-dim); max-width: 360px; line-height: 1.7; margin: 0; }
+  .gate input { background: var(--bg-panel); border: 1px solid var(--line); color: var(--text); padding: 12px 14px; font-family: var(--mono); font-size: 13px; width: 280px; border-radius: 3px; text-align: center; }
+  .gate input:focus { outline: none; border-color: var(--accent); }
+  .gate button { background: transparent; border: 1px solid var(--accent-dim); color: var(--accent); font-family: var(--mono); font-size: 12px; letter-spacing: 0.05em; padding: 10px 22px; border-radius: 3px; cursor: pointer; }
+  .gate button:hover { border-color: var(--accent); }
+  .gate .error { color: var(--danger); font-family: var(--mono); font-size: 12px; min-height: 16px; }
+  .gate .server-row { display: flex; flex-direction: column; gap: 6px; margin-bottom: 6px; }
+  .gate .server-row label { font-family: var(--mono); font-size: 10px; color: var(--text-dim); }
+
+  .app { display: none; flex: 1; flex-direction: column; min-height: 0; }
+  .app.visible { display: flex; }
+  .log { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; padding: 4px 2px 20px; }
+  .turn { display: flex; flex-direction: column; gap: 4px; max-width: 88%; }
+  .turn.user { align-self: flex-end; align-items: flex-end; }
+  .turn.assistant { align-self: flex-start; align-items: flex-start; }
+  .bubble { padding: 12px 15px; border-radius: 3px; font-size: 15.5px; line-height: 1.5; }
+  .turn.user .bubble { background: var(--bg-panel); border: 1px solid var(--line); color: var(--text); }
+  .turn.assistant .bubble { background: transparent; border-left: 2px solid var(--accent); padding-left: 13px; color: var(--text); }
+  .tag { font-family: var(--mono); font-size: 10px; letter-spacing: 0.08em; color: var(--text-dim); }
+  .empty { margin: auto; text-align: center; color: var(--text-dim); font-family: var(--mono); font-size: 13px; line-height: 1.8; }
+
+  footer { border-top: 1px solid var(--line); padding-top: 16px; display: flex; flex-direction: column; align-items: center; gap: 10px; }
+  .mic-btn { width: 68px; height: 68px; border-radius: 50%; border: 1px solid var(--accent-dim); background: var(--bg-panel); color: var(--accent); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: border-color 0.15s ease, transform 0.1s ease; }
+  .mic-btn:hover { border-color: var(--accent); }
+  .mic-btn:active { transform: scale(0.96); }
+  .mic-btn.listening { border-color: var(--accent); animation: pulse 1.4s infinite; }
+  .mic-btn.thinking { border-color: var(--text-dim); color: var(--text-dim); }
+  @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(201,138,62,0.45); } 70% { box-shadow: 0 0 0 16px rgba(201,138,62,0); } 100% { box-shadow: 0 0 0 0 rgba(201,138,62,0); } }
+  .hint { font-family: var(--mono); font-size: 11px; color: var(--text-dim); text-align: center; max-width: 320px; }
+  .interim { font-family: var(--mono); font-size: 13px; color: var(--text-dim); min-height: 16px; }
+  .banner { background: rgba(168,80,59,0.12); border: 1px solid var(--danger); color: #d8a596; font-family: var(--mono); font-size: 12px; padding: 10px 12px; border-radius: 3px; margin-bottom: 14px; display: none; }
+  .banner.show { display: block; }
+  .lock-note { font-family: var(--mono); font-size: 10px; color: var(--text-dim); border-top: 1px dashed var(--line); margin-top: 12px; padding-top: 10px; text-align: center; }
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-thumb { background: var(--line); border-radius: 3px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Voice Core — Secure</h1>
+    <span class="status" id="status">locked</span>
+  </header>
+
+  <div class="gate" id="gate">
+    <h2>Connect</h2>
+    <p>Enter your server URL and password once. The API key lives on that server now — never in this page.</p>
+    <div class="server-row">
+      <label for="serverInput">SERVER URL</label>
+      <input type="text" id="serverInput" placeholder="https://your-app.onrender.com" autocomplete="off">
+    </div>
+    <div class="server-row">
+      <label for="passInput">PASSWORD</label>
+      <input type="password" id="passInput" placeholder="password" autocomplete="off">
+    </div>
+    <button id="unlockBtn">Connect</button>
+    <div class="error" id="gateError"></div>
+  </div>
+
+  <div class="app" id="app">
+    <div class="banner" id="banner"></div>
+    <div class="log" id="log">
+      <div class="empty" id="emptyState">no signal yet<br>press the mic and speak</div>
+    </div>
+    <footer>
+      <div class="interim" id="interim"></div>
+      <button class="mic-btn" id="micBtn" aria-label="Start listening">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+          <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+          <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+          <line x1="12" y1="19" x2="12" y2="23"/>
+          <line x1="8" y1="23" x2="16" y2="23"/>
+        </svg>
+      </button>
+      <div class="hint">Chrome or Edge required — Web Speech API only ships there reliably.</div>
+      <div class="lock-note">Token lives in memory only — closing the tab logs you out. No key ever touches this file.</div>
+    </footer>
+  </div>
+</div>
+
+<script>
+const gateEl = document.getElementById('gate');
+const appEl = document.getElementById('app');
+const serverInput = document.getElementById('serverInput');
+const passInput = document.getElementById('passInput');
+const unlockBtn = document.getElementById('unlockBtn');
+const gateError = document.getElementById('gateError');
+const statusEl = document.getElementById('status');
+const micBtn = document.getElementById('micBtn');
+const logEl = document.getElementById('log');
+const emptyState = document.getElementById('emptyState');
+const interimEl = document.getElementById('interim');
+const bannerEl = document.getElementById('banner');
+
+let SERVER_URL = '';
+let authToken = '';
+let history = [];
+let isListening = false;
+let isThinking = false;
+
+// Remember the server URL (not the password/token) so you don't retype it every time
+serverInput.value = localStorage.getItem('voicecore_server') || '';
+
+async function connect() {
+  SERVER_URL = serverInput.value.trim().replace(/\/$/, '');
+  const password = passInput.value;
+  if (!SERVER_URL || !password) {
+    gateError.textContent = 'enter both fields';
+    return;
+  }
+  gateError.textContent = 'connecting…';
+  try {
+    const res = await fetch(SERVER_URL + '/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password }),
+    });
+    if (!res.ok) {
+      gateError.textContent = 'wrong password or server unreachable';
+      return;
+    }
+    const data = await res.json();
+    authToken = data.token;
+    localStorage.setItem('voicecore_server', SERVER_URL);
+    gateEl.style.display = 'none';
+    appEl.classList.add('visible');
+    statusEl.textContent = 'idle';
+    passInput.value = '';
+  } catch (e) {
+    gateError.textContent = 'could not reach server — check the URL';
+  }
+}
+unlockBtn.addEventListener('click', connect);
+passInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') connect(); });
+
+function showBanner(msg) { bannerEl.textContent = msg; bannerEl.classList.add('show'); }
+function setStatus(text, live) { statusEl.textContent = text; statusEl.classList.toggle('live', !!live); }
+
+function addTurn(role, text) {
+  if (emptyState.parentNode) emptyState.remove();
+  const turn = document.createElement('div');
+  turn.className = 'turn ' + role;
+  const tag = document.createElement('div');
+  tag.className = 'tag';
+  tag.textContent = role === 'user' ? 'YOU' : 'CORE';
+  const bubble = document.createElement('div');
+  bubble.className = 'bubble';
+  bubble.textContent = text;
+  turn.appendChild(tag);
+  turn.appendChild(bubble);
+  logEl.appendChild(turn);
+  logEl.scrollTop = logEl.scrollHeight;
+  return bubble;
+}
+
+function speak(text) {
+  if (!('speechSynthesis' in window)) return;
+  window.speechSynthesis.cancel();
+  const utter = new SpeechSynthesisUtterance(text);
+  utter.rate = 1.02;
+  utter.pitch = 0.95;
+  window.speechSynthesis.speak(utter);
+}
+
+async function askCore(userText) {
+  isThinking = true;
+  micBtn.classList.add('thinking');
+  setStatus('thinking…');
+  const bubble = addTurn('assistant', '…');
+  history.push({ role: 'user', content: userText });
+
+  try {
+    const response = await fetch(SERVER_URL + '/api/chat', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + authToken,
+      },
+      body: JSON.stringify({ messages: history }),
+    });
+    if (response.status === 401) {
+      throw new Error('session expired — reconnect');
+    }
+    if (!response.ok) throw new Error('server returned status ' + response.status);
+    const data = await response.json();
+    const textBlocks = (data.content || []).filter(b => b.type === 'text').map(b => b.text);
+    const replyText = textBlocks.join(' ').trim() || "I didn't get a usable response — try again.";
+    bubble.textContent = replyText;
+    history.push({ role: 'assistant', content: replyText });
+    speak(replyText);
+  } catch (err) {
+    console.error(err);
+    bubble.textContent = 'Error: ' + err.message;
+    showBanner(err.message.includes('expired') ? 'Session expired — refresh and reconnect.' : 'Request failed — check the server is running.');
+  } finally {
+    isThinking = false;
+    micBtn.classList.remove('thinking');
+    setStatus('idle');
+  }
+}
+
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+if (!SpeechRecognition) {
+  showBanner('This browser doesn\'t support the Web Speech API. Open this in Chrome or Edge on desktop.');
+  micBtn.disabled = true;
+  micBtn.style.opacity = 0.4;
+} else {
+  const recognition = new SpeechRecognition();
+  recognition.continuous = false;
+  recognition.interimResults = true;
+  recognition.lang = 'en-US';
+  recognition.onstart = () => { isListening = true; micBtn.classList.add('listening'); setStatus('listening…', true); };
+  recognition.onresult = (event) => {
+    let interim = '', final = '';
+    for (let i = event.resultIndex; i < event.results.length; i++) {
+      const t = event.results[i][0].transcript;
+      if (event.results[i].isFinal) final += t; else interim += t;
+    }
+    interimEl.textContent = interim;
+    if (final.trim()) { interimEl.textContent = ''; addTurn('user', final.trim()); askCore(final.trim()); }
+  };
+  recognition.onerror = (event) => {
+    if (event.error === 'not-allowed') showBanner('Microphone access was blocked. Allow mic permission and try again.');
+    else if (event.error !== 'no-speech') showBanner('Speech recognition error: ' + event.error);
+  };
+  recognition.onend = () => { isListening = false; micBtn.classList.remove('listening'); interimEl.textContent = ''; if (!isThinking) setStatus('idle'); };
+  micBtn.addEventListener('click', () => {
+    if (isThinking) return;
+    if (isListening) { recognition.stop(); }
+    else { window.speechSynthesis.cancel(); try { recognition.start(); } catch (e) {} }
+  });
+}
+</script>
+</body>
+</html>
